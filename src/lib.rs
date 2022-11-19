@@ -56,43 +56,36 @@ enum State<T: Num> {
 }
 
 #[derive(Debug)]
-struct Monitor<TDomain, TDestination> {
-    domain: Range<TDomain>,
-    destination: Range<TDestination>,
-    nominal: Range<TDestination>,
+struct Monitor<T> {
+    domain: Range<T>,
+    destination: Range<T>,
+    nominal: Range<T>,
 }
 
-impl<TDomain, TDestination> Monitor<TDomain, TDestination>
-where
-    TDomain: Num + PartialOrd + Copy + std::fmt::Display + std::fmt::Debug,
-    TDestination: Num + PartialOrd + Copy + std::fmt::Display + std::fmt::Debug,
-{
+impl<T: Num + PartialOrd + Copy + std::fmt::Display + std::fmt::Debug> Monitor<T> {
     fn new(
-        domain: Range<TDomain>,
-        destination: Range<TDestination>,
-        nominal: Range<TDestination>,
-    ) -> Result<Monitor<TDomain, TDestination>, String> {
-        match &destination.contains(&nominal) {
-            true => Ok(Monitor {
-                domain,
-                destination,
-                nominal,
-            }),
-            false => Err(format!(
+        domain: Range<T>,
+        destination: Range<T>,
+        nominal: Range<T>,
+    ) -> Result<Monitor<T>, String> {
+        if let false = &destination.contains(&nominal) {
+            return Err(format!(
                 "values nominal:={:?} is not contained in values:={:?}",
                 &nominal, &destination
-            )),
+            ));
         }
+
+        Ok(Monitor {
+            domain,
+            destination,
+            nominal,
+        })
     }
 
-    fn state(
-        &mut self,
-        current: Sample<TDomain>,
-        previous: Sample<TDomain>,
-    ) -> State<TDestination> {
-        let size = self.domain.size();
+    fn validate(&mut self, current: Sample<T>, previous: Sample<T>) -> State<T> {
+        let value = self.domain.size();
 
-        State::Nominal(TDestination::zero())
+        State::Nominal(T::zero())
     }
 }
 
