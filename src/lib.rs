@@ -1,7 +1,8 @@
 use num_traits::Num;
+use std::time;
 
 #[derive(Debug)]
-struct Range<T: Num + PartialOrd + Copy + std::fmt::Display> {
+struct Range<T> {
     min: T,
     max: T,
 }
@@ -27,57 +28,71 @@ impl<T: Num + PartialOrd + Copy + std::fmt::Display> Range<T> {
 }
 
 #[derive(Debug)]
-struct Monitor {
-    current: usize,
-    previous: usize,
-    samples: Range<usize>,
-    values: Range<f64>,
-    nominal: Range<f64>,
+struct Sample<T: Num + PartialOrd + Copy + std::fmt::Display> {
+    value: T,
+    time: time::Instant,
+}
+
+impl<T: Num + PartialOrd + Copy + std::fmt::Display> Sample<T> {
+    fn new(value: T) -> Sample<T> {
+        Sample {
+            value,
+            time: time::Instant::now(),
+        }
+    }
 }
 
 #[derive(Debug)]
-enum Deviation {
-    Low(f64),
-    High(f64),
+enum Deviation<T> {
+    Low(T),
+    High(T),
 }
 
 #[derive(Debug)]
-enum State {
-    Nominal(f64),
-    Alert(f64, Deviation),
-    Error(f64, Deviation),
+enum State<T: Num> {
+    Nominal(T),
+    Alert(T, Deviation<T>),
+    Error(T, Deviation<T>),
 }
 
-impl Monitor {
+#[derive(Debug)]
+struct Monitor<TDomain, TDestination> {
+    domain: Range<TDomain>,
+    destination: Range<TDestination>,
+    nominal: Range<TDestination>,
+}
+
+impl<TDomain, TDestination> Monitor<TDomain, TDestination>
+where
+    TDomain: Num + PartialOrd + Copy + std::fmt::Display + std::fmt::Debug,
+    TDestination: Num + PartialOrd + Copy + std::fmt::Display + std::fmt::Debug,
+{
     fn new(
-        samples: Range<usize>,
-        values: Range<f64>,
-        nominal: Range<f64>,
-    ) -> Result<Monitor, String> {
-        match &values.contains(&nominal) {
+        domain: Range<TDomain>,
+        destination: Range<TDestination>,
+        nominal: Range<TDestination>,
+    ) -> Result<Monitor<TDomain, TDestination>, String> {
+        match &destination.contains(&nominal) {
             true => Ok(Monitor {
-                current: 0,
-                previous: 0,
-                samples,
-                values,
+                domain,
+                destination,
                 nominal,
             }),
             false => Err(format!(
                 "values nominal:={:?} is not contained in values:={:?}",
-                &nominal, &values
+                &nominal, &destination
             )),
         }
     }
 
-    fn update(mut self, sample: usize) {
-        self.previous = self.current;
-        self.current = sample;
-    }
+    fn state(
+        &mut self,
+        current: Sample<TDomain>,
+        previous: Sample<TDomain>,
+    ) -> State<TDestination> {
+        let size = self.domain.size();
 
-    fn state(self) -> State {
-        let size = self.values.size();
-
-        State::Nominal(0.0)
+        State::Nominal(TDestination::zero())
     }
 }
 
@@ -144,12 +159,10 @@ mod tests {
             Range::new(0.2, 0.7).unwrap(),
         )
         .unwrap();
-        assert_eq!(0, monitor.current);
-        assert_eq!(0, monitor.previous);
-        assert_eq!(0x00, monitor.samples.min);
-        assert_eq!(0xff, monitor.samples.max);
-        assert_eq!(0.0, monitor.values.min);
-        assert_eq!(1.0, monitor.values.max);
+        assert_eq!(0x00, monitor.domain.min);
+        assert_eq!(0xff, monitor.domain.max);
+        assert_eq!(0.0, monitor.destination.min);
+        assert_eq!(1.0, monitor.destination.max);
         assert_eq!(0.2, monitor.nominal.min);
         assert_eq!(0.7, monitor.nominal.max);
     }
