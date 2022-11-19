@@ -1,2 +1,2 @@
 # dvmn
-digital value monitoring with rust
+monitor digitized values (e.g. sensor data) with rust
