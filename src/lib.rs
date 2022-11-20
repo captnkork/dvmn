@@ -1,14 +1,28 @@
 use num_traits::Num;
-use std::time;
+use std::time::{self, Instant};
+
 
 #[derive(Debug)]
-struct Range<T> {
-    min: T,
-    max: T,
+enum Deviation {
+    Low(f64),
+    High(f64),
 }
 
-impl<T: Num + PartialOrd + Copy + std::fmt::Display> Range<T> {
-    fn new(min: T, max: T) -> Result<Range<T>, String> {
+#[derive(Debug)]
+enum State {
+    Nominal(f64),
+    Alert(f64, Deviation),
+    Error(f64, Deviation),
+}
+
+#[derive(Debug)]
+struct Range {
+    min: f64,
+    max: f64,
+}
+
+impl Range {
+    fn new(min: f64, max: f64) -> Result<Range, String> {
         match min <= max {
             true => Ok(Range { min, max }),
             false => Err(format!(
@@ -18,56 +32,53 @@ impl<T: Num + PartialOrd + Copy + std::fmt::Display> Range<T> {
         }
     }
 
-    fn contains(&self, range: &Range<T>) -> bool {
+    fn contains(&self, range: &Range) -> bool {
         &self.min <= &range.min && &range.max <= &self.max
     }
 
-    fn size(&self) -> T {
+    fn deviation(&self, x: f64) -> Option<f64> {
+        if x < self.min {
+            return Some(x - self.min) 
+        }
+        if x > self.max {
+            return Some(x - self.max) 
+        }
+        None
+    }
+
+    fn size(&self) -> f64 {
         self.max - self.min
     }
 }
 
 #[derive(Debug)]
-struct Sample<T: Num + PartialOrd + Copy + std::fmt::Display> {
-    value: T,
+struct Sample {
+    value: f64,
     time: time::Instant,
 }
 
-impl<T: Num + PartialOrd + Copy + std::fmt::Display> Sample<T> {
-    fn new(value: T) -> Sample<T> {
+impl Sample {
+    fn new(x: usize) -> Sample {
         Sample {
-            value,
+            value: x as f64,
             time: time::Instant::now(),
         }
     }
 }
 
 #[derive(Debug)]
-enum Deviation<T> {
-    Low(T),
-    High(T),
+struct Monitor {
+    domain: Range,
+    destination: Range,
+    nominal: Range,
 }
 
-#[derive(Debug)]
-enum State<T: Num> {
-    Nominal(T),
-    Alert(T, Deviation<T>),
-    Error(T, Deviation<T>),
-}
-
-#[derive(Debug)]
-struct Monitor<T> {
-    domain: Range<T>,
-    destination: Range<T>,
-    nominal: Range<T>,
-}
-
-impl<T: Num + PartialOrd + Copy + std::fmt::Display + std::fmt::Debug> Monitor<T> {
+impl Monitor {
     fn new(
-        domain: Range<T>,
-        destination: Range<T>,
-        nominal: Range<T>,
-    ) -> Result<Monitor<T>, String> {
+        domain: Range,
+        destination: Range,
+        nominal: Range,
+    ) -> Result<Monitor, String> {
         if let false = &destination.contains(&nominal) {
             return Err(format!(
                 "values nominal:={:?} is not contained in values:={:?}",
@@ -82,10 +93,18 @@ impl<T: Num + PartialOrd + Copy + std::fmt::Display + std::fmt::Debug> Monitor<T
         })
     }
 
-    fn validate(&mut self, current: Sample<T>, previous: Sample<T>) -> State<T> {
-        let value = self.domain.size();
+    fn f(& self, x: f64) -> f64 {
+        self.destination.min + ( x * ( self.destination.size() / self.domain.size() ) )
+    }
 
-        State::Nominal(T::zero())
+    fn validate(&mut self, current: Sample, previous: Sample) -> State {
+        
+        let current_value = self.f(current.value);
+        let previous_value = self.f(previous.value);
+
+        //if current
+
+        State::Nominal(current_value)
     }
 }
 
@@ -95,12 +114,6 @@ mod tests {
 
     #[test]
     fn new_range() {
-        {
-            let range = Range::new(0x00, 0xff).unwrap();
-            assert_eq!(0x00, range.min);
-            assert_eq!(0xff, range.max);
-        }
-
         {
             let range = Range::new(0.5, 0.6).unwrap();
             assert_eq!(0.5, range.min);
@@ -145,15 +158,27 @@ mod tests {
             .contains(&Range::new(0.0, 1.0).unwrap()));
     }
     #[test]
+    fn range_deviation() {
+        for off in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+            let range = Range::new(off - 1.0, off + 1.0).unwrap();
+
+            assert_eq!(None, range.deviation(off - 1.0));
+            assert_eq!(None, range.deviation(off));
+            assert_eq!(None, range.deviation(off + 1.0));
+            assert!( (range.deviation(off - 1.1).unwrap() - (-0.1)).abs() < 1e-10, " at off = {}", off);
+            assert!( (range.deviation(off + 1.1).unwrap() - (0.1)).abs() < 1e-10, "at off = {}", off);
+        }
+    }
+    #[test]
     fn new_monitor() {
         let monitor = Monitor::new(
-            Range::new(0x00, 0xff).unwrap(),
+            Range::new(0.0, 256.0).unwrap(),
             Range::new(0.0, 1.0).unwrap(),
             Range::new(0.2, 0.7).unwrap(),
         )
         .unwrap();
-        assert_eq!(0x00, monitor.domain.min);
-        assert_eq!(0xff, monitor.domain.max);
+        assert_eq!(0.0, monitor.domain.min);
+        assert_eq!(256.0, monitor.domain.max);
         assert_eq!(0.0, monitor.destination.min);
         assert_eq!(1.0, monitor.destination.max);
         assert_eq!(0.2, monitor.nominal.min);
@@ -162,7 +187,7 @@ mod tests {
     #[test]
     fn new_monitor_invalid_spec() {
         let result = Monitor::new(
-            Range::new(0x00, 0xff).unwrap(),
+            Range::new(0.0, 256.0).unwrap(),
             Range::new(0.2, 1.0).unwrap(),
             Range::new(0.1, 0.7).unwrap(),
         );
